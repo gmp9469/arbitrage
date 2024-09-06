@@ -76,7 +76,8 @@ if response.status_code == 200:
         best_h2h_away_bookmaker = None
         best_totals_over_bookmaker = None
         best_totals_under_bookmaker = None
-        best_totals_point = None  
+        best_totals_point = None 
+        best_totals = {} 
 
         for bookmaker in bookmakers:
             if bookmaker['key'] in excluded_bookmakers:
@@ -97,24 +98,43 @@ if response.status_code == 200:
                                 best_h2h_away_odds = outcome['price']
                                 best_h2h_away_bookmaker = bookmaker['title']
                 
-                if market['key'] == 'totals': 
+                if market['key'] == 'totals':  
                     over = None
                     under = None
+                    over_point = None
+                    under_point = None
+
+                    # Loop through outcomes to separate over and under
                     for outcome in market['outcomes']:
                         if outcome['name'] == 'Over':
                             over = outcome
+                            over_point = float(outcome['point'])
                         if outcome['name'] == 'Under':
                             under = outcome
-                    
-                    if over and under and over['point'] == under['point']:
-                        if best_totals_over_odds is None or over['price'] > best_totals_over_odds:
-                            best_totals_over_odds = over['price']
-                            best_totals_over_bookmaker = bookmaker['title']
-                            best_totals_point = over['point']  
-                        if best_totals_under_odds is None or under['price'] > best_totals_under_odds:
-                            best_totals_under_odds = under['price']
-                            best_totals_under_bookmaker = bookmaker['title']
-                            best_totals_point = under['point']  
+                            under_point = float(outcome['point'])
+
+                    # Make sure the point lines match exactly
+                    if over and under and over_point == under_point:
+                        point_line = over_point  # Use the point line as a key
+
+                        # Check if this point line has been encountered before
+                        if point_line not in best_totals:
+                            # Initialize with current bookmaker's odds
+                            best_totals[point_line] = {
+                                'over_odds': over['price'],
+                                'under_odds': under['price'],
+                                'over_bookmaker': bookmaker['title'],
+                                'under_bookmaker': bookmaker['title'],
+                            }
+                        else:
+                            # Update if better odds are found
+                            if over['price'] > best_totals[point_line]['over_odds']:
+                                best_totals[point_line]['over_odds'] = over['price']
+                                best_totals[point_line]['over_bookmaker'] = bookmaker['title']
+                            if under['price'] > best_totals[point_line]['under_odds']:
+                                best_totals[point_line]['under_odds'] = under['price']
+                                best_totals[point_line]['under_bookmaker'] = bookmaker['title']
+ 
         
         if best_h2h_home_odds and best_h2h_away_odds:
             arbitrage_percentage = calculate_arbitrage_percentage(best_h2h_home_odds, best_h2h_away_odds)

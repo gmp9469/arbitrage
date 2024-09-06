@@ -11,8 +11,8 @@ BASE_URL = 'https://api.the-odds-api.com/v4/sports/'
 sport = 'upcoming'  # NFL as an example
 region = 'us'  # US region
 markets = 'h2h,totals'  # Head-to-head and totals (over/under) markets
-odds_format = 'american'  
-date_format = 'iso'  
+odds_format = 'american'
+date_format = 'iso'
 
 # List of bookmakers to exclude
 excluded_bookmakers = ['betonlineag', 'bovada', 'lowvig', 'mybookieag', 'superbook', 'wynnbet', 'unibet_us']
@@ -39,53 +39,48 @@ def calculate_arbitrage_percentage(odds_1, odds_2):
     dec_odds_1 = american_to_decimal(odds_1)
     dec_odds_2 = american_to_decimal(odds_2)
     arbitrage_percentage = (1 / dec_odds_1) + (1 / dec_odds_2)
-    
     return arbitrage_percentage
 
 def calculate_arbitrage(odds_1, odds_2, total_bet=100):
     dec_odds_1 = american_to_decimal(odds_1)
     dec_odds_2 = american_to_decimal(odds_2)
-    
+
     bet_1 = (total_bet * dec_odds_2) / (dec_odds_1 + dec_odds_2)
     bet_2 = total_bet - bet_1
-    
+
     profit_outcome_1 = (bet_1 * dec_odds_1) - total_bet
     profit_outcome_2 = (bet_2 * dec_odds_2) - total_bet
-    
+
     return bet_1, bet_2, profit_outcome_1, profit_outcome_2
 
 if response.status_code == 200:
     odds_data = response.json()
-    arbitrage_opportunities = []  
+    arbitrage_opportunities = []
 
     for event in odds_data:
         game_id = event['id']
         home_team = event['home_team']
         away_team = event['away_team']
-        game_date_utc = event['commence_time']  
-        sport = event['sport_key']  
+        game_date_utc = event['commence_time']
+        sport = event['sport_key']
         bookmakers = event['bookmakers']
-        
+
         game_date_est = convert_utc_to_est(game_date_utc)
-        
+
+        best_totals = {}
+
         best_h2h_home_odds = None
         best_h2h_away_odds = None
-        best_totals_over_odds = None
-        best_totals_under_odds = None
         best_h2h_home_bookmaker = None
         best_h2h_away_bookmaker = None
-        best_totals_over_bookmaker = None
-        best_totals_under_bookmaker = None
-        best_totals_point = None 
-        best_totals = {} 
 
         for bookmaker in bookmakers:
             if bookmaker['key'] in excluded_bookmakers:
-                continue  
+                continue  # Skip excluded bookmakers
 
             for market in bookmaker['markets']:
                 if len(market['outcomes']) != 2:
-                    continue  
+                    continue 
 
                 if market['key'] == 'h2h':  
                     for outcome in market['outcomes']:
@@ -97,14 +92,13 @@ if response.status_code == 200:
                             if best_h2h_away_odds is None or outcome['price'] > best_h2h_away_odds:
                                 best_h2h_away_odds = outcome['price']
                                 best_h2h_away_bookmaker = bookmaker['title']
-                
+
                 if market['key'] == 'totals':  
                     over = None
                     under = None
                     over_point = None
                     under_point = None
 
-                    # Loop through outcomes to separate over and under
                     for outcome in market['outcomes']:
                         if outcome['name'] == 'Over':
                             over = outcome
@@ -113,13 +107,10 @@ if response.status_code == 200:
                             under = outcome
                             under_point = float(outcome['point'])
 
-                    # Make sure the point lines match exactly
                     if over and under and over_point == under_point:
-                        point_line = over_point  # Use the point line as a key
+                        point_line = over_point  
 
-                        # Check if this point line has been encountered before
                         if point_line not in best_totals:
-                            # Initialize with current bookmaker's odds
                             best_totals[point_line] = {
                                 'over_odds': over['price'],
                                 'under_odds': under['price'],
@@ -127,15 +118,13 @@ if response.status_code == 200:
                                 'under_bookmaker': bookmaker['title'],
                             }
                         else:
-                            # Update if better odds are found
                             if over['price'] > best_totals[point_line]['over_odds']:
                                 best_totals[point_line]['over_odds'] = over['price']
                                 best_totals[point_line]['over_bookmaker'] = bookmaker['title']
                             if under['price'] > best_totals[point_line]['under_odds']:
                                 best_totals[point_line]['under_odds'] = under['price']
                                 best_totals[point_line]['under_bookmaker'] = bookmaker['title']
- 
-        
+
         if best_h2h_home_odds and best_h2h_away_odds:
             arbitrage_percentage = calculate_arbitrage_percentage(best_h2h_home_odds, best_h2h_away_odds)
 
@@ -145,7 +134,7 @@ if response.status_code == 200:
                     "type": "h2h",
                     "sport": sport,
                     "game": f"{home_team} vs {away_team}",
-                    "date": game_date_est,  
+                    "date": game_date_est,
                     "best_home_odds": best_h2h_home_odds,
                     "best_home_bookmaker": best_h2h_home_bookmaker,
                     "best_away_odds": best_h2h_away_odds,
@@ -158,21 +147,21 @@ if response.status_code == 200:
                     "max_profit": max(profit_team_1, profit_team_2)
                 })
 
-        if best_totals_over_odds and best_totals_under_odds and best_totals_point:
-            arbitrage_percentage = calculate_arbitrage_percentage(best_totals_over_odds, best_totals_under_odds)
+        for point_line, data in best_totals.items():
+            arbitrage_percentage = calculate_arbitrage_percentage(data['over_odds'], data['under_odds'])
 
             if arbitrage_percentage < 1:
-                bet_1, bet_2, profit_over, profit_under = calculate_arbitrage(best_totals_over_odds, best_totals_under_odds)
+                bet_1, bet_2, profit_over, profit_under = calculate_arbitrage(data['over_odds'], data['under_odds'])
                 arbitrage_opportunities.append({
                     "type": "totals",
                     "sport": sport,
                     "game": f"{home_team} vs {away_team}",
-                    "date": game_date_est,  
-                    "best_over_odds": best_totals_over_odds,
-                    "best_over_bookmaker": best_totals_over_bookmaker,
-                    "best_under_odds": best_totals_under_odds,
-                    "best_under_bookmaker": best_totals_under_bookmaker,
-                    "best_point_line": best_totals_point,  
+                    "date": game_date_est,
+                    "best_over_odds": data['over_odds'],
+                    "best_over_bookmaker": data['over_bookmaker'],
+                    "best_under_odds": data['under_odds'],
+                    "best_under_bookmaker": data['under_bookmaker'],
+                    "best_point_line": point_line,
                     "bet_1": bet_1,
                     "bet_2": bet_2,
                     "profit_over": profit_over,
@@ -180,11 +169,11 @@ if response.status_code == 200:
                     "min_profit": min(profit_over, profit_under),
                     "max_profit": max(profit_over, profit_under)
                 })
-    
+
     arbitrage_opportunities.sort(key=lambda x: x['min_profit'])
 
     if len(arbitrage_opportunities) == 0:
-        print("No opportunites")
+        print("No opportunities")
     for arb in arbitrage_opportunities:
         if arb['type'] == 'h2h':
             print(f"Sport: {arb['sport']}")
